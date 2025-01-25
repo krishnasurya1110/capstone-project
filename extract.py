@@ -6,8 +6,8 @@ def main():
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the date range
-    start_date = "01/01/2024"
-    end_date = "01/31/2024"
+    start_date = "12/01/2024"
+    end_date = "12/31/2024"
 
     # Fetch the data
     print("Fetching transit data...")
@@ -17,7 +17,7 @@ def main():
         print(f"Fetched {len(data)} records.")
 
         # Define the output file path to save on Desktop
-        output_file = os.path.expanduser("~/Desktop/capstone/transit_data_january_2024.csv")
+        output_file = os.path.expanduser("datasets/12-2024.csv")
         print(f"Saving data to {output_file}...")
 
         # Save the data to a CSV file
@@ -28,4 +28,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
