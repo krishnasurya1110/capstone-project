@@ -7,7 +7,7 @@ def main():
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the date range for data availability
-    start_date = "01/2024"  # Start from October 2024
+    start_date = "01/2024"  # Start from Jan 2024
     today = datetime.today()
     previous_month = today.replace(day=1) - timedelta(days=1)  # Get the last day of the previous month
     end_date = previous_month.strftime("%m/%Y")
