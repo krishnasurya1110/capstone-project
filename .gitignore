@@ -6,3 +6,6 @@ __pycache__/
 
 # Ignore datasets folder
 datasets/
+
+#GCP credentials
+lively-encoder-448916-d5-5e9819f4df4e.json
