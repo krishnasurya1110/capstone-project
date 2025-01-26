@@ -1,25 +1,29 @@
 import requests
-import csv
 import os
 from datetime import datetime, timedelta
+from google.cloud import storage
+from io import StringIO
+import csv
 
-def get_existing_files(folder_path):
+
+def get_existing_files_gcs(bucket_name):
     """
-    Get a list of existing CSV files in the folder.
+    Get a list of existing CSV filenames in the GCS bucket.
 
     Parameters:
-    - folder_path (str): Path to the folder containing CSV files.
+    - bucket_name (str): Name of the GCS bucket.
 
     Returns:
     - set: A set of existing filenames in 'MM-YYYY' format.
     """
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blobs = bucket.list_blobs()
+
     return {
-        os.path.splitext(file)[0]
-        for file in os.listdir(folder_path)
-        if file.endswith(".csv")
+        os.path.splitext(blob.name)[0]  # Extract filename without extension
+        for blob in blobs
+        if blob.name.endswith(".csv")
     }
 
 def generate_date_range(start_date, end_date):
@@ -43,6 +47,31 @@ def generate_date_range(start_date, end_date):
         start = start.replace(day=1)  # Ensure we stay at the start of the month
 
     return months
+
+def upload_csv_to_gcs(bucket_name, data, destination_blob_name, timeout=300):
+    """
+    Upload a CSV data string directly to Google Cloud Storage.
+
+    Parameters:
+    - bucket_name (str): Name of the GCS bucket.
+    - data (list of dict): The data to write to the CSV file.
+    - destination_blob_name (str): Destination path in the GCS bucket.
+    - timeout (int): Timeout in seconds for the upload operation.
+    """
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    # Convert data to CSV format
+    output = StringIO()
+    if data:
+        writer = csv.DictWriter(output, fieldnames=data[0].keys())
+        writer.writeheader()
+        writer.writerows(data)
+
+    # Upload CSV content to GCS with timeout
+    blob.upload_from_string(output.getvalue(), content_type="text/csv", timeout=timeout)
+    print(f"File uploaded to {destination_blob_name} in bucket {bucket_name}.")
 
 def fetch_transit_data(base_url, start_date, end_date, limit=5000000):
     """

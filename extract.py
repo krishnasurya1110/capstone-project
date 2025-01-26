@@ -1,29 +1,29 @@
-import os
 from datetime import datetime, timedelta
-from functions import fetch_transit_data, save_to_csv, get_existing_files, generate_date_range
+from functions import get_existing_files_gcs, generate_date_range, upload_csv_to_gcs
+from functions import fetch_transit_data
 
 def main():
     # Base URL of the API
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the date range for data availability
-    start_date = "07/2020"  # Start from July 2020
+    start_date = "01/2024"  # Start from October 2024
     today = datetime.today()
     previous_month = today.replace(day=1) - timedelta(days=1)  # Get the last day of the previous month
     end_date = previous_month.strftime("%m/%Y")
 
-    # Define the datasets folder
-    datasets_folder = os.path.expanduser("datasets")
+    # Define your GCS bucket name
+    gcs_bucket_name = "capstone-project-group7"
 
-    # Get existing files
-    existing_files = get_existing_files(datasets_folder)
+    # Get existing files from the GCS bucket
+    existing_files = get_existing_files_gcs(gcs_bucket_name)
 
     # Generate the full list of months to process
     all_months = generate_date_range(start_date, end_date)
     missing_months = [month for month in all_months if month not in existing_files]
 
     if not missing_months:
-        print("All data is already downloaded.")
+        print("All data is already uploaded to GCS.")
         return
 
     print(f"Missing months: {missing_months}")
@@ -43,13 +43,11 @@ def main():
             data = fetch_transit_data(base_url, start_date, end_date, limit)
             print(f"Fetched {len(data)} records for {month}.")
 
-            # Define the output file path
-            output_file = os.path.join(datasets_folder, f"{month}.csv")
+            # Upload the data directly to GCS as a CSV
+            destination_blob_name = f"{month}.csv"
+            print(f"Uploading data for {month} to Google Cloud Storage...")
+            upload_csv_to_gcs(gcs_bucket_name, data, destination_blob_name, timeout=600)  # 10 minutes timeout
 
-            # Save the data to a CSV file
-            print(f"Saving data to {output_file}...")
-            save_to_csv(data, output_file)
-            print(f"Data for {month} saved successfully.")
         except Exception as e:
             print(f"An error occurred for {month}: {e}")
 
