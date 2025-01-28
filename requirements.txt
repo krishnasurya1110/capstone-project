@@ -1,4 +1,8 @@
+openmeteo-requests
+requests-cache
 pandas
 numpy
 requests
 google-cloud-storage
+retry-requests
+python-dotenv

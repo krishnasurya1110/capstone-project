@@ -1,0 +1,21 @@
+{
+    "openmeteo_url": "https://archive-api.open-meteo.com/v1/archive",
+    "openmeteo_params": {
+        "latitude": 40.7143,
+        "longitude": -74.006,
+        "start_date": "2020-06-30",
+        "end_date": "2024-12-31",
+        "hourly": [
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "precipitation",
+            "rain",
+            "snowfall"
+        ],
+        "temperature_unit": "fahrenheit",
+        "timezone": "America/New_York"
+    },
+    "gcs_bucket_name": "weatherdata_nyc",
+    "gcs_destination_blob_name": "weather/weather_data.csv"
+}
