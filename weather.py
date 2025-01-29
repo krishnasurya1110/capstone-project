@@ -1,3 +1,4 @@
+from logging_config import logger
 import openmeteo_requests
 import requests_cache
 import pandas as pd
@@ -5,17 +6,8 @@ from retry_requests import retry
 from google.cloud import storage
 from io import StringIO
 import os
-import logging
 from datetime import datetime
-from dotenv import load_dotenv
 import json
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Set the path to your service account key file
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GCS_CREDENTIALS_PATH")
@@ -105,6 +97,27 @@ def process_weather_data(response):
         logger.error(f"Error processing weather data: {e}")
         raise
 
+# Check if a blob exists in the GCS bucket
+def blob_exists(bucket_name, blob_name):
+    """
+    Checks if a blob exists in the GCS bucket.
+
+    Args:
+        bucket_name (str): Name of the GCS bucket.
+        blob_name (str): Name of the blob to check.
+
+    Returns:
+        bool: True if the blob exists, False otherwise.
+    """
+    try:
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        return blob.exists()
+    except Exception as e:
+        logger.error(f"Error checking if blob exists: {e}")
+        raise
+
 # Upload data to Google Cloud Storage
 def upload_to_gcs(bucket_name, destination_blob_name, data):
     """
@@ -144,14 +157,27 @@ def main():
         df.set_index('date', inplace=True)
         grouped = df.groupby([df.index.year, df.index.month])
 
+        # Get start and end dates from config
+        start_date = config["openmeteo_params"]["start_date"]
+        end_date = config["openmeteo_params"]["end_date"]
+        print(f"Checking for missing files between {start_date} and {end_date}...")
+
         # Upload each month's data to GCS
         for (year, month), month_data in grouped:
             # Reset the index to include the 'date' column in the CSV
             month_data = month_data.reset_index()
-            csv_buffer = StringIO()
-            month_data.to_csv(csv_buffer, index=False)
             destination_blob_name = f"weather/{month:02d}-{year}.csv"
-            upload_to_gcs(config["gcs_bucket_name"], destination_blob_name, csv_buffer.getvalue())
+            
+            # Check if the blob already exists
+            if not blob_exists(config["gcs_bucket_name"], destination_blob_name):
+                print(f"Uploading {destination_blob_name}...")
+                csv_buffer = StringIO()
+                month_data.to_csv(csv_buffer, index=False)
+                upload_to_gcs(config["gcs_bucket_name"], destination_blob_name, csv_buffer.getvalue())
+                print(f"{destination_blob_name} uploaded successfully.")
+            else:
+                # Skip printing for files that already exist
+                pass
 
     except Exception as e:
         logger.error(f"An error occurred in the main workflow: {e}")
