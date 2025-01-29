@@ -8,7 +8,7 @@ def main():
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the start date for data availability
-    start_date = "11/2023"  # Start from July 2020
+    start_date = "07/2020"  # Start from July 2020
 
     # Get the latest date from the API
     try:
