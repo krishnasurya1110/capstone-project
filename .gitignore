@@ -7,8 +7,11 @@ __pycache__/
 # Ignore datasets folder
 datasets/
 
-#GCP credentials
+# GCP credentials
 lively-encoder-448916-d5-5e9819f4df4e.json
+
+# Ignore log files
+logs/
 
 .env
 .cache/
