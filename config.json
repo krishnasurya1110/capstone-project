@@ -16,6 +16,5 @@
         "temperature_unit": "fahrenheit",
         "timezone": "America/New_York"
     },
-    "gcs_bucket_name": "weatherdata_nyc",
-    "gcs_destination_blob_name": "weather/weather_data.csv"
+    "gcs_bucket_name": "weatherdata_nyc"
 }

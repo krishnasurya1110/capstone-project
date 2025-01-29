@@ -1,51 +1,161 @@
-import requests
-import json
+import openmeteo_requests
+import requests_cache
+import pandas as pd
+from retry_requests import retry
+from google.cloud import storage
+from io import StringIO
 import os
-from urllib.parse import quote_plus
+import logging
+from datetime import datetime
+from dotenv import load_dotenv
+import json
 
-# Define the base API URL and API key
-base_api_url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
-api_key = "2VHWXMPKFJBKJALVYQFYY3GY8"
+# Load environment variables from .env file
+load_dotenv()
 
-# List of boroughs to fetch weather data for
-boroughs = ["Manhattan", "Brooklyn", "Bronx", "Queens", "Staten Island"]
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Define date range
-start_date = "2024-01-01"
-end_date = "2024-12-31"
+# Set the path to your service account key file
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GCS_CREDENTIALS_PATH")
 
-# Define the elements and include parameters as per your sample URL
-elements = "datetime,datetimeEpoch,name,address,latitude,longitude,tempmax,tempmin,temp,feelslikemax,feelslikemin,feelslike,dew,humidity,precip,preciptype,snow,snowdepth,windgust,windspeed,winddir,pressure,visibility,solarenergy,sunrise,sunset,conditions,description,icon,source"
-include = "fcst,obs,histfcst,stats"
+# Load configuration from a JSON file
+with open("config.json") as config_file:
+    config = json.load(config_file)
 
-# Path to save the files
-output_path = "/Users/monicamuniraj/Documents/capstone/capstone-project/datasets"
+# Validate configuration
+def validate_config(config):
+    required_keys = ["openmeteo_params", "gcs_bucket_name"] 
+    for key in required_keys:
+        if key not in config:
+            raise ValueError(f"Missing required key in config: {key}")
 
-# Ensure the output directory exists
-os.makedirs(output_path, exist_ok=True)
+validate_config(config)
 
-# Fetch and save weather data for each borough
-for borough in boroughs:
-    # URL-encode the borough name to handle spaces (like in Staten Island)
-    encoded_borough = quote_plus(borough)
-
-    # Construct the full API URL with all parameters for the borough
-    api_url = f"{base_api_url}/{encoded_borough}/{start_date}/{end_date}?unitGroup=us&elements={elements}&include={include}&key={api_key}&contentType=json"
-
+# Validate date format and range
+def validate_dates(start_date, end_date):
     try:
-        # Make the API request
-        response = requests.get(api_url)
-        response.raise_for_status()  # Raise an error for HTTP issues
-        weather_data = response.json()  # Parse the JSON response
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        if start > end:
+            raise ValueError("Start date must be before end date.")
+    except ValueError as e:
+        logger.error(f"Invalid date format: {e}")
+        raise
 
-        # Construct the file name and path
-        file_name = f"weather_{encoded_borough.lower()}.json"
-        file_path = os.path.join(output_path, file_name)
+validate_dates(config["openmeteo_params"]["start_date"], config["openmeteo_params"]["end_date"])
 
-        # Save the data to a file
-        with open(file_path, "w") as file:
-            json.dump(weather_data, file, indent=4)
-            print(f"Weather data for {borough} saved to '{file_path}'")
+# Setup the Open-Meteo API client with cache and retry on error
+cache_session = requests_cache.CachedSession('.cache', expire_after=-1)
+retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+openmeteo = openmeteo_requests.Client(session=retry_session)
 
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred while fetching data for {borough}: {e}")
+# Fetch weather data from Open-Meteo API
+def fetch_weather_data(url, params):
+    """
+    Fetches weather data from the Open-Meteo API.
+
+    Args:
+        url (str): The API endpoint URL.
+        params (dict): Parameters for the API request.
+
+    Returns:
+        list: List of responses from the API.
+    """
+    try:
+        logger.info("Fetching weather data from Open-Meteo API...")
+        responses = openmeteo.weather_api(url, params=params)
+        return responses
+    except Exception as e:
+        logger.error(f"Error fetching data from Open-Meteo API: {e}")
+        raise
+
+# Process weather data into a DataFrame
+def process_weather_data(response):
+    """
+    Processes the API response into a pandas DataFrame.
+
+    Args:
+        response: The API response object.
+
+    Returns:
+        pd.DataFrame: DataFrame containing hourly weather data.
+    """
+    try:
+        logger.info("Processing weather data...")
+        hourly = response.Hourly()
+        hourly_data = {
+            "date": pd.date_range(
+                start=pd.to_datetime(hourly.Time(), unit="s", utc=True),
+                end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True),
+                freq=pd.Timedelta(seconds=hourly.Interval()),
+                inclusive="left"
+            ),
+            "temperature_2m": hourly.Variables(0).ValuesAsNumpy(),
+            "relative_humidity_2m": hourly.Variables(1).ValuesAsNumpy(),
+            "apparent_temperature": hourly.Variables(2).ValuesAsNumpy(),
+            "precipitation": hourly.Variables(3).ValuesAsNumpy(),
+            "rain": hourly.Variables(4).ValuesAsNumpy(),
+            "snowfall": hourly.Variables(5).ValuesAsNumpy()
+        }
+        df = pd.DataFrame(data=hourly_data)
+        return df
+    except Exception as e:
+        logger.error(f"Error processing weather data: {e}")
+        raise
+
+# Upload data to Google Cloud Storage
+def upload_to_gcs(bucket_name, destination_blob_name, data):
+    """
+    Uploads data to a Google Cloud Storage bucket.
+
+    Args:
+        bucket_name (str): Name of the GCS bucket.
+        destination_blob_name (str): Path to the destination blob.
+        data (str): Data to upload as a string.
+
+    Returns:
+        None
+    """
+    try:
+        logger.info(f"Uploading data to GCS bucket: {bucket_name}/{destination_blob_name}...")
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(destination_blob_name)
+        blob.upload_from_string(data, content_type="text/csv")
+        logger.info(f"Data uploaded to {destination_blob_name} in bucket {bucket_name}.")
+    except Exception as e:
+        logger.error(f"Error uploading data to GCS: {e}")
+        raise
+
+# Main function to orchestrate the workflow
+def main():
+    try:
+        # Fetch weather data
+        responses = fetch_weather_data(config["openmeteo_url"], config["openmeteo_params"])
+        response = responses[0]
+
+        # Process weather data
+        df = process_weather_data(response)
+
+        # Split the DataFrame by month
+        df['date'] = pd.to_datetime(df['date'])
+        df.set_index('date', inplace=True)
+        grouped = df.groupby([df.index.year, df.index.month])
+
+        # Upload each month's data to GCS
+        for (year, month), month_data in grouped:
+            # Reset the index to include the 'date' column in the CSV
+            month_data = month_data.reset_index()
+            csv_buffer = StringIO()
+            month_data.to_csv(csv_buffer, index=False)
+            destination_blob_name = f"weather/{month:02d}-{year}.csv"
+            upload_to_gcs(config["gcs_bucket_name"], destination_blob_name, csv_buffer.getvalue())
+
+    except Exception as e:
+        logger.error(f"An error occurred in the main workflow: {e}")
+        raise
+
+if __name__ == "__main__":
+    main()
