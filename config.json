@@ -3,7 +3,7 @@
     "openmeteo_params": {
         "latitude": 40.7143,
         "longitude": -74.006,
-        "start_date": "2020-06-30",
+        "start_date": "2020-03-31",
         "end_date": "2024-12-31",
         "hourly": [
             "temperature_2m",
