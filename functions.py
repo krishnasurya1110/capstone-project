@@ -4,28 +4,48 @@ import requests
 import os
 from datetime import datetime, timedelta
 from google.cloud import storage
-from io import StringIO
-import csv
+from io import BytesIO
+# from io import StringIO
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pandas as pd
 
-def get_existing_files_gcs(bucket_name):
+
+def get_most_recent_file(bucket_name, file_extension=".parquet"):
     """
-    Get a list of existing CSV filenames in the GCS bucket.
-
-    Parameters:
-    - bucket_name (str): Name of the GCS bucket.
-
-    Returns:
-    - set: A set of existing filenames in 'MM-YYYY' format.
+    Get the most recent file in the GCS bucket with the specified file extension.
+    If no files are found, return None.
     """
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    # List all files in the bucket with the specified extension
     blobs = bucket.list_blobs()
+    filtered_blobs = [blob for blob in blobs if blob.name.endswith(file_extension)]
 
-    return {
-        os.path.splitext(blob.name)[0]  # Extract filename without extension
-        for blob in blobs
-        if blob.name.endswith(".csv")
-    }
+    if not filtered_blobs:
+        return None  # No files found with the specified extension
+
+    # Sort files by their names (assuming filenames are in the format MM-YYYY.parquet)
+    filtered_blobs.sort(key=lambda blob: blob.name, reverse=True)
+
+    # Return the most recent file based on the filename
+    return filtered_blobs[0].name
+
+
+def get_existing_files_gcs(bucket_name, file_extension=".parquet"):
+    """
+    Get a list of existing files in the GCS bucket with the specified file extension.
+    """
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    # List all files in the bucket with the specified extension
+    blobs = bucket.list_blobs()
+    existing_files = [blob.name for blob in blobs if blob.name.endswith(file_extension)]
+
+    return existing_files
+
 
 def generate_date_range(start_date, end_date):
     """
@@ -48,31 +68,6 @@ def generate_date_range(start_date, end_date):
         start = start.replace(day=1)  # Ensure we stay at the start of the month
 
     return months
-
-def upload_csv_to_gcs(bucket_name, data, destination_blob_name, timeout=300):
-    """
-    Upload a CSV data string directly to Google Cloud Storage.
-
-    Parameters:
-    - bucket_name (str): Name of the GCS bucket.
-    - data (list of dict): The data to write to the CSV file.
-    - destination_blob_name (str): Destination path in the GCS bucket.
-    - timeout (int): Timeout in seconds for the upload operation.
-    """
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(destination_blob_name)
-
-    # Convert data to CSV format
-    output = StringIO()
-    if data:
-        writer = csv.DictWriter(output, fieldnames=data[0].keys())
-        writer.writeheader()
-        writer.writerows(data)
-
-    # Upload CSV content to GCS with timeout
-    blob.upload_from_string(output.getvalue(), content_type="text/csv", timeout=timeout)
-    print(f"File uploaded to {destination_blob_name} in bucket {bucket_name}.")
 
 def fetch_transit_data(base_url, start_date, end_date, limit=5000000):
     """
@@ -122,16 +117,62 @@ def fetch_transit_data(base_url, start_date, end_date, limit=5000000):
 
     return response.json()
 
+def json_to_parquet(data):
+    """Convert JSON data to Parquet format."""
+    df = pd.DataFrame(data)  # Convert JSON to DataFrame
+
+    # Explicitly convert datetime columns
+    if "transit_timestamp" in df.columns:
+        df["transit_timestamp"] = pd.to_datetime(df["transit_timestamp"])
+
+    table = pa.Table.from_pandas(df)  # Convert DataFrame to PyArrow Table
+    buffer = BytesIO()
+    pq.write_table(table, buffer)  # Write Parquet to in-memory buffer
+    buffer.seek(0)
+    return buffer
+
+def upload_parquet_to_gcs(bucket_name, data, destination_blob_name, timeout=1000):
+    """Upload Parquet data to GCS."""
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+
+    parquet_buffer = json_to_parquet(data)  # Convert JSON to Parquet
+    blob.upload_from_file(parquet_buffer, timeout=timeout)  # Upload Parquet file
+
+
+def fetch_and_upload_month_data(base_url, gcs_bucket_name, month):
+    """Fetch data for a specific month, convert to Parquet, and upload to GCS."""
+    try:
+        month_num, year = month.split("-")
+        start_date_str = f"{month_num}/01/{year}"
+        end_date_str = datetime.strptime(start_date_str, "%m/%d/%Y").replace(day=28) + timedelta(days=4)
+        end_date_str = end_date_str.replace(day=1) - timedelta(days=1)  # Get the last day of the month
+        end_date_str = end_date_str.strftime("%m/%d/%Y")
+
+        logger.info(f"Fetching data for {month}...")
+        limit = 3000000  # Set the desired limit
+        data = fetch_transit_data(base_url, start_date_str, end_date_str, limit)
+        logger.info(f"Fetched {len(data)} records for {month}.")
+
+        # Upload the data directly to GCS as a Parquet file
+        destination_blob_name = f"{month}.parquet"
+        logger.info(f"Uploading data for {month} to Google Cloud Storage...")
+        upload_parquet_to_gcs(gcs_bucket_name, data, destination_blob_name, timeout=600)  # 10 minutes timeout
+
+    except Exception as e:
+        logger.error(f"An error occurred for {month}: {e}")
+
 def get_latest_entry_from_gcs(bucket_name, blob_name):
     """
-    Get the latest entry (transit_timestamp) from an existing CSV file in GCS.
+    Get the latest entry (transit_timestamp) from an existing Parquet file in GCS.
 
     Parameters:
     - bucket_name (str): Name of the GCS bucket.
-    - blob_name (str): Name of the CSV file in GCS.
+    - blob_name (str): Name of the Parquet file in GCS.
 
     Returns:
-    - datetime: The latest transit_timestamp in the CSV file, or None if the file is empty.
+    - datetime: The latest transit_timestamp in the Parquet file, or None if the file is empty.
     """
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
@@ -140,77 +181,26 @@ def get_latest_entry_from_gcs(bucket_name, blob_name):
     if not blob.exists():
         return None
 
-    # Download the CSV content
-    content = blob.download_as_text()
-    reader = csv.DictReader(StringIO(content))
-    rows = list(reader)
+    # Download the Parquet file content
+    content = blob.download_as_bytes()
+    df = pd.read_parquet(BytesIO(content))
 
-    if not rows:
+    if df.empty or "transit_timestamp" not in df.columns:
         return None
 
     # Get the latest transit_timestamp
-    latest_timestamp_str = max(row["transit_timestamp"] for row in rows)
-    latest_timestamp = datetime.strptime(latest_timestamp_str, "%Y-%m-%dT%H:%M:%S.%f")
-    return latest_timestamp
-
-def append_to_csv_in_gcs(bucket_name, data, blob_name, timeout=300):
-    """
-    Append new data to an existing CSV file in GCS.
-
-    Parameters:
-    - bucket_name (str): Name of the GCS bucket.
-    - data (list of dict): The new data to append.
-    - blob_name (str): Name of the CSV file in GCS.
-    - timeout (int): Timeout in seconds for the upload operation.
-    """
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-
-    # Download existing content
-    existing_content = blob.download_as_text()
-    existing_rows = list(csv.DictReader(StringIO(existing_content)))
-
-    # Append new data
-    updated_rows = existing_rows + data
-
-    # Convert updated data to CSV format
-    output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=data[0].keys())
-    writer.writeheader()
-    writer.writerows(updated_rows)
-
-    # Upload updated content to GCS
-    blob.upload_from_string(output.getvalue(), content_type="text/csv", timeout=timeout)
-    print(f"Appended new data to {blob_name} in bucket {bucket_name}.")
-
-def get_most_recent_csv_file(bucket_name):
-    """
-    Get the most recent MM-YYYY.csv file from the GCS bucket.
-
-    Parameters:
-    - bucket_name (str): Name of the GCS bucket.
-
-    Returns:
-    - str: The filename of the most recent CSV file (e.g., "12-2023.csv"), or None if no files exist.
-    """
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blobs = bucket.list_blobs()
-
-    # Extract filenames and filter for CSV files
-    csv_files = [
-        blob.name for blob in blobs if blob.name.endswith(".csv") and "-" in blob.name
-    ]
-
-    if not csv_files:
+    latest_timestamp = df["transit_timestamp"].max()
+    
+    if pd.isnull(latest_timestamp):
         return None
 
-    # Find the most recent file based on the filename (MM-YYYY)
-    most_recent_file = max(csv_files, key=lambda x: datetime.strptime(x.split(".")[0], "%m-%Y"))
-    return most_recent_file
+    # Convert to datetime if needed
+    if isinstance(latest_timestamp, str):
+        latest_timestamp = datetime.strptime(latest_timestamp, "%Y-%m-%dT%H:%M:%S.%f")
 
-def get_latest_date_from_api(base_url):
+    return latest_timestamp
+
+def get_latest_entry_from_api(base_url):
     """
     Fetch the latest transit_timestamp from the API.
 
@@ -244,3 +234,44 @@ def get_latest_date_from_api(base_url):
     latest_date_str = data[0]['transit_timestamp']
     latest_date = datetime.strptime(latest_date_str, "%Y-%m-%dT%H:%M:%S.%f")
     return latest_date
+
+def append_to_parquet_in_gcs(bucket_name, data, destination_blob_name, timeout=600):
+    """
+    Append new data to an existing Parquet file in GCS.
+    """
+    try:
+        logger.info(f"Appending data to {destination_blob_name}...")
+        # Download the existing Parquet file
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(destination_blob_name)
+
+        if not blob.exists():
+            logger.info(f"File {destination_blob_name} does not exist. Uploading as a new file.")
+            upload_parquet_to_gcs(bucket_name, data, destination_blob_name, timeout)
+            return
+
+        # Download the existing Parquet file to an in-memory buffer
+        existing_buffer = BytesIO()
+        blob.download_to_file(existing_buffer)
+        existing_buffer.seek(0)
+
+        # Read the existing Parquet file into a Pandas DataFrame
+        existing_table = pq.read_table(existing_buffer)
+        existing_df = existing_table.to_pandas()
+
+        # Convert new data to a DataFrame
+        new_df = pd.DataFrame(data)
+
+        # Append new data to the existing DataFrame
+        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+
+        # Convert the combined DataFrame to Parquet
+        combined_buffer = json_to_parquet(combined_df.to_dict("records"))
+
+        # Upload the updated Parquet file to GCS
+        blob.upload_from_file(combined_buffer, timeout=timeout)
+        logger.info(f"Successfully updated {destination_blob_name}.")
+    except Exception as e:
+        logger.error(f"Error appending data to {destination_blob_name}: {e}")
+        raise
