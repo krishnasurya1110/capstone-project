@@ -1,11 +1,9 @@
 from logging_config import logger
 
 import requests
-import os
 from datetime import datetime, timedelta
 from google.cloud import storage
 from io import BytesIO
-# from io import StringIO
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
@@ -155,6 +153,11 @@ def fetch_and_upload_month_data(base_url, gcs_bucket_name, month):
         data = fetch_transit_data(base_url, start_date_str, end_date_str, limit)
         logger.info(f"Fetched {len(data)} records for {month}.")
 
+        # Check if data is empty
+        if not data:
+            logger.warning(f"No data found for {month}. Skipping file creation...")
+            return
+        
         # Upload the data directly to GCS as a Parquet file
         destination_blob_name = f"{month}.parquet"
         logger.info(f"Uploading data for {month} to Google Cloud Storage...")

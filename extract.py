@@ -9,23 +9,6 @@ import sys
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from functions_new import (
-    get_most_recent_file,
-    get_existing_files_gcs,
-    generate_date_range,
-    fetch_transit_data,
-    append_to_parquet_in_gcs,
-    fetch_and_upload_month_data,
-    get_latest_entry_from_gcs,
-    get_latest_entry_from_api,
-)
-
-# import pyarrow as pa
-# import pyarrow.parquet as pq
-# import pandas as pd
-# from io import BytesIO
-# from google.cloud import storage
-
 # Set up GCP Logging (only once)
 client = google.cloud.logging.Client()
 handler = CloudLoggingHandler(client)
@@ -50,15 +33,16 @@ def main():
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the start and end dates for data availability (configurable)
-    start_date = "11/2024"  # Start from October 2024
-    end_date = "12/2024"    # End at December 2024
+    start_date = "07/2020"  # Start from July 2020
+    end_date = datetime.now().strftime("%m/%Y")   # End at current month
 
     # Define your GCS bucket name (configurable)
     gcs_bucket_name = "testdata_mta"
 
     # Get existing files from the GCS bucket
     existing_files = get_existing_files_gcs(gcs_bucket_name, file_extension=".parquet")
-    logger.info(f"Existing files in GCS: {existing_files}")
+    existing_files_no_ext = [os.path.splitext(blob)[0] for blob in existing_files]
+    logger.info(f"Existing files in GCS: {existing_files_no_ext}")
 
     # Generate the full list of months to process
     all_months = generate_date_range(start_date, end_date)
