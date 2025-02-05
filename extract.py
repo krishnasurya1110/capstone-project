@@ -5,6 +5,7 @@ from google.cloud.logging.handlers import CloudLoggingHandler
 from google.cloud.logging_v2.handlers import setup_logging
 import logging
 import sys
+import os
 
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,7 +34,7 @@ def main():
     base_url = "https://data.ny.gov/resource/wujg-7c2s.json"
 
     # Define the start and end dates for data availability (configurable)
-    start_date = "07/2020"  # Start from July 2020
+    start_date = "08/2024"  # Start from July 2020
     end_date = datetime.now().strftime("%m/%Y")   # End at current month
 
     # Define your GCS bucket name (configurable)
@@ -53,8 +54,8 @@ def main():
     logger.info(f"Missing months to process: {missing_months}")
 
     # Get the most recent Parquet file in the GCS bucket
-    most_recent_file = get_most_recent_file(gcs_bucket_name, file_extension=".parquet")
-    if not most_recent_file:
+    most_recent_file_1 = get_most_recent_file(gcs_bucket_name, file_extension=".parquet")
+    if not most_recent_file_1:
         logger.info("No Parquet files found in the GCS bucket. Fetching data for all months.")
 
     # Process missing months in parallel (create new Parquet files)
@@ -66,15 +67,16 @@ def main():
             except Exception as e:
                 logger.error(f"An error occurred in a thread: {e}")
 
+    most_recent_file_2 = get_most_recent_file(gcs_bucket_name, file_extension=".parquet")
 
     # Process the most recent Parquet file (update with new entries)
-    if most_recent_file:
-        logger.info(f"The most recent Parquet file is: {most_recent_file}")
-        month = most_recent_file.split(".")[0]  # Extract MM-YYYY from the filename
+    if most_recent_file_2:
+        logger.info(f"The most recent Parquet file is: {most_recent_file_2}")
+        month = most_recent_file_2.split(".")[0]  # Extract MM-YYYY from the filename
         # Get the latest entry in the existing Parquet file
-        latest_entry_in_gcs = get_latest_entry_from_gcs(gcs_bucket_name, most_recent_file)
+        latest_entry_in_gcs = get_latest_entry_from_gcs(gcs_bucket_name, most_recent_file_2)
         if not latest_entry_in_gcs:
-            logger.info(f"No data found in {most_recent_file}. Skipping update.")
+            logger.info(f"No data found in {most_recent_file_2}. Skipping update.")
         else:
             # Get the latest entry from the API
             latest_entry_in_api = get_latest_entry_from_api(base_url)
@@ -107,11 +109,11 @@ def main():
                         logger.info(f"Fetched {len(data)} new records for {month}.")
 
                         # Append new data to the existing Parquet file in GCS
-                        append_to_parquet_in_gcs(gcs_bucket_name, data, most_recent_file, timeout=600)
-                        logger.info(f"Updated {most_recent_file} with new data.")
+                        append_to_parquet_in_gcs(gcs_bucket_name, data, most_recent_file_2, timeout=600)
+                        logger.info(f"Updated {most_recent_file_2} with new data.")
 
                     except Exception as e:
-                        logger.error(f"An error occurred while updating {most_recent_file}: {e}")
+                        logger.error(f"An error occurred while updating {most_recent_file_2}: {e}")
                         raise
 
 

@@ -25,32 +25,40 @@ import pandas as pd
 # # Display the DataFrame
 # print(df)
 
-#--------------
+# #--------------
 
-# APPENDED
-# Read the Parquet file
-df = pd.read_parquet('datasets/12-2024_appended.parquet')
+# # APPENDED
+# # Read the Parquet file
+# df = pd.read_parquet('datasets/12-2024_appended.parquet')
 
-# Display the DataFrame
-print(df)
+# # Display the DataFrame
+# print(df)
 
+# CHECK UPLOADED AND DOWNLOADED
+df_up = pd.read_parquet('datasets/08-2024_up.parquet')
+print("df_up")
+print(df_up)
 
-#---------------
+df_down = pd.read_parquet('datasets/08-2024_down.parquet')
+print("df_down")
+print(df_down)
 
-# COUNT MATCHING ROWS
+# #---------------
 
-# Convert the 'transit_timestamp' column to datetime
-df['transit_timestamp'] = pd.to_datetime(df['transit_timestamp'])
+# # COUNT MATCHING ROWS
 
-# Define the target date (as a string or datetime.date object)
-target_date = '2024-12-31'  # or use pd.to_datetime('2024-12-31').date()
+# # Convert the 'transit_timestamp' column to datetime
+# df['transit_timestamp'] = pd.to_datetime(df['transit_timestamp'])
 
-# Condition: Match only the date part (ignoring time)
-condition = df['transit_timestamp'].dt.date == pd.to_datetime(target_date).date()
+# # Define the target date (as a string or datetime.date object)
+# target_date = '2024-12-31'  # or use pd.to_datetime('2024-12-31').date()
 
-# Count the number of rows that match the condition
-num_matching_rows = condition.sum()
-print(f"Number of rows matching the date {target_date}: {num_matching_rows}")
+# # Condition: Match only the date part (ignoring time)
+# condition = df['transit_timestamp'].dt.date == pd.to_datetime(target_date).date()
+
+# # Count the number of rows that match the condition
+# num_matching_rows = condition.sum()
+# print(f"Number of rows matching the date {target_date}: {num_matching_rows}")
 
 # #----------
 
