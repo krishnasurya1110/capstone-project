@@ -1,11 +1,10 @@
 pandas
 # numpy
 pyarrow
-python-dotenv
-openmeteo-requests
+#python-dotenv
 requests
 retry-requests
 requests-cache
 google-cloud-storage
 google-cloud-logging
-logging
+#logging

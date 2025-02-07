@@ -1,4 +1,4 @@
-from logging_config import logger
+from logging_config import *
 
 import requests
 from datetime import datetime, timedelta
@@ -84,36 +84,27 @@ def fetch_transit_data(base_url, start_date, end_date, limit=5000000):
     start_date_iso = f"{start_date[6:10]}-{start_date[0:2]}-{start_date[3:5]}T00:00:00"
     end_date_iso = f"{end_date[6:10]}-{end_date[0:2]}-{end_date[3:5]}T23:59:59"
 
-    # Build the query with a limit
-    query = f"""
-        SELECT 
-            transit_timestamp,
-            transit_mode,
-            station_complex_id,
-            station_complex,
-            borough,
-            payment_method,
-            fare_class_category,
-            ridership,
-            transfers,
-            latitude,
-            longitude,
-            georeference
-        WHERE
-            transit_timestamp >= '{start_date_iso}' AND
-            transit_timestamp <= '{end_date_iso}'
-        ORDER BY
-            transit_timestamp
-        LIMIT {limit}
-    """
-    url = f"{base_url}?$query={query}"
+    # Define the API endpoint with date filtering
+    url = (
+        f"{base_url}"
+        f"?$where=transit_timestamp >= '{start_date_iso}' AND transit_timestamp <= '{end_date_iso}'"
+        f" &$limit={limit}"
+    )
 
-    # Fetch data
-    response = requests.get(url)
-    if response.status_code != 200:
-        raise Exception(f"Failed to fetch data: {response.status_code}, {response.text}")
+    try:
+        response = requests.get(url)
 
-    return response.json()
+        # Handle the response
+        if response.status_code == 200:
+            return response.json()  # Return JSON response
+        else:
+            logger.log_text(f"Failed to fetch data. Status code: {response.status_code}, Response: {response.text}")
+            raise Exception(f"Failed to fetch data: {response.status_code}, {response.text}")
+    
+    except requests.exceptions.RequestException as e:
+        # logger.log_text(f"An error occurred during the request: {e}", severity=500)
+        raise Exception(f"An error occurred during the request: {e}")
+    
 
 def json_to_parquet(data):
     """Convert JSON data to Parquet format."""
@@ -148,23 +139,24 @@ def fetch_and_upload_month_data(base_url, gcs_bucket_name, month):
         end_date_str = end_date_str.replace(day=1) - timedelta(days=1)  # Get the last day of the month
         end_date_str = end_date_str.strftime("%m/%d/%Y")
 
-        logger.info(f"Fetching data for {month}...")
+        logger.log_text(f"Fetching data for {month}...")
         limit = 3000000  # Set the desired limit
         data = fetch_transit_data(base_url, start_date_str, end_date_str, limit)
-        logger.info(f"Fetched {len(data)} records for {month}.")
+        logger.log_text(f"Fetched {len(data)} records for {month}.")
 
         # Check if data is empty
         if not data:
-            logger.warning(f"No data found for {month}. Skipping file creation...")
+            # logger.warning(f"No data found for {month}. Skipping file creation...")
+            logger.log_text(f"No data found for {month}. Skipping file creation...", severity="WARNING")
             return
         
         # Upload the data directly to GCS as a Parquet file
         destination_blob_name = f"{month}.parquet"
-        logger.info(f"Uploading data for {month} to Google Cloud Storage...")
+        logger.log_text(f"Uploading data for {month} to Google Cloud Storage...")
         upload_parquet_to_gcs(gcs_bucket_name, data, destination_blob_name, timeout=600)  # 10 minutes timeout
 
     except Exception as e:
-        logger.error(f"An error occurred for {month}: {e}")
+        logger.log_text(f"An error occurred for {month}: {e}", severity="ERROR")
 
 def get_latest_entry_from_gcs(bucket_name, blob_name):
     """
@@ -243,14 +235,14 @@ def append_to_parquet_in_gcs(bucket_name, data, destination_blob_name, timeout=6
     Append new data to an existing Parquet file in GCS.
     """
     try:
-        logger.info(f"Appending data to {destination_blob_name}...")
+        logger.log_text(f"Appending data to {destination_blob_name}...")
         # Download the existing Parquet file
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(destination_blob_name)
 
         if not blob.exists():
-            logger.info(f"File {destination_blob_name} does not exist. Uploading as a new file.")
+            logger.log_text(f"File {destination_blob_name} does not exist. Uploading as a new file.")
             upload_parquet_to_gcs(bucket_name, data, destination_blob_name, timeout)
             return
 
@@ -274,7 +266,8 @@ def append_to_parquet_in_gcs(bucket_name, data, destination_blob_name, timeout=6
 
         # Upload the updated Parquet file to GCS
         blob.upload_from_file(combined_buffer, timeout=timeout)
-        logger.info(f"Successfully updated {destination_blob_name}.")
+        logger.log_text(f"Successfully updated {destination_blob_name}.")
     except Exception as e:
-        logger.error(f"Error appending data to {destination_blob_name}: {e}")
+        # logger.error(f"Error appending data to {destination_blob_name}: {e}")
+        logger.log_text(f"Error appending data to {destination_blob_name}: {e}", severity="ERROR")
         raise
