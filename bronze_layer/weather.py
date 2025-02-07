@@ -1,4 +1,4 @@
-from logging_config import logger
+from logging_config import *
 import openmeteo_requests
 import requests_cache
 import pandas as pd
@@ -33,7 +33,7 @@ def validate_dates(start_date, end_date):
         if start > end:
             raise ValueError("Start date must be before end date.")
     except ValueError as e:
-        logger.error(f"Invalid date format: {e}")
+        logger.log_text(f"Invalid date format: {e}", severity="ERROR")
         raise
 
 validate_dates(config["openmeteo_params"]["start_date"], config["openmeteo_params"]["end_date"])
@@ -56,11 +56,11 @@ def fetch_weather_data(url, params):
         list: List of responses from the API.
     """
     try:
-        logger.info("Fetching weather data from Open-Meteo API...")
+        logger.log_text("Fetching weather data from Open-Meteo API...")
         responses = openmeteo.weather_api(url, params=params)
         return responses
     except Exception as e:
-        logger.error(f"Error fetching data from Open-Meteo API: {e}")
+        logger.log_text(f"Error fetching data from Open-Meteo API: {e}", severity="ERROR")
         raise
 
 # Process weather data into a DataFrame
@@ -75,7 +75,7 @@ def process_weather_data(response):
         pd.DataFrame: DataFrame containing hourly weather data.
     """
     try:
-        logger.info("Processing weather data...")
+        logger.log_text("Processing weather data...")
         hourly = response.Hourly()
         hourly_data = {
             "date": pd.date_range(
@@ -94,7 +94,7 @@ def process_weather_data(response):
         df = pd.DataFrame(data=hourly_data)
         return df
     except Exception as e:
-        logger.error(f"Error processing weather data: {e}")
+        logger.log_text(f"Error processing weather data: {e}",  severity="ERROR")
         raise
 
 # Check if a blob exists in the GCS bucket
@@ -115,7 +115,7 @@ def blob_exists(bucket_name, blob_name):
         blob = bucket.blob(blob_name)
         return blob.exists()
     except Exception as e:
-        logger.error(f"Error checking if blob exists: {e}")
+        logger.log_text(f"Error checking if blob exists: {e}", severity="ERROR")
         raise
 
 # Upload data to Google Cloud Storage
@@ -132,14 +132,14 @@ def upload_to_gcs(bucket_name, destination_blob_name, data):
         None
     """
     try:
-        logger.info(f"Uploading data to GCS bucket: {bucket_name}/{destination_blob_name}...")
+        logger.log_text(f"Uploading data to GCS bucket: {bucket_name}/{destination_blob_name}...")
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(destination_blob_name)
         blob.upload_from_string(data, content_type="text/csv")
-        logger.info(f"Data uploaded to {destination_blob_name} in bucket {bucket_name}.")
+        logger.log_text(f"Data uploaded to {destination_blob_name} in bucket {bucket_name}.")
     except Exception as e:
-        logger.error(f"Error uploading data to GCS: {e}")
+        logger.log_text(f"Error uploading data to GCS: {e}", severity="ERROR")
         raise
 
 # Main function to orchestrate the workflow
@@ -180,7 +180,7 @@ def main():
                 pass
 
     except Exception as e:
-        logger.error(f"An error occurred in the main workflow: {e}")
+        logger.log_text(f"An error occurred in the main workflow: {e}", severity="ERROR")
         raise
 
 if __name__ == "__main__":
