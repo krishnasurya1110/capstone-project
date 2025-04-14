@@ -6,6 +6,7 @@
 
 # Ignore Python bytecode cache folders
 __pycache__/
+silver_layer/_pycache_/
 
 # Ignore datasets folder
 datasets/
