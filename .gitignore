@@ -1,11 +1,22 @@
 # Ignore .DS_Store files
 .DS_Store
 
+# Ignore vscode workspace settings
+.vscode/
+
 # Ignore Python bytecode cache folders
 __pycache__/
 
 # Ignore datasets folder
 datasets/
+
+# Ignore parquet reading code file
+bronze_layer/check_parquet.py
+
+# Ignore virtual environments
+pyspark_capstone_venv/
+cap_venv/
+cap_venv_2/
 
 # GCP credentials
 lively-encoder-448916-d5-5e9819f4df4e.json
