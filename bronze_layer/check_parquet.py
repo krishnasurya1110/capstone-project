@@ -1,12 +1,12 @@
 import pandas as pd
 
 # #------------
-# # Upload to gcp
-# # Read the Parquet file
-# df = pd.read_parquet('datasets/gcp/12-2024.parquet')
+# Upload to gcp
+# Read the Parquet file
+df = pd.read_parquet('/Users/krishnasurya/Downloads/02-2021.parquet')
 
-# # Display the DataFrame
-# print(df)
+# Display the DataFrame
+print(df)
 # # #------------
 
 # # ORIGINAL
