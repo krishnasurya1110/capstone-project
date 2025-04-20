@@ -6,7 +6,6 @@ LOCAL_JARS_DIR="/usr/lib/spark/jars"
 # Create the directory if it doesn't exist
 mkdir -p ${LOCAL_JARS_DIR}
 
-
 # Array of JAR URLs
 JAR_URLS=(
   "https://repo1.maven.org/maven2/io/delta/delta-core_2.12/2.3.0/delta-core_2.12-2.3.0.jar"
@@ -35,4 +34,4 @@ PIP_EXEC=$(which pip)
 ${PIP_EXEC} install great-expectations==1.3.0
 ${PIP_EXEC} install delta-spark==2.3.0
 ${PIP_EXEC} install google-cloud-logging==3.7.0
-
+${PIP_EXEC} install xgboost==1.7.6
