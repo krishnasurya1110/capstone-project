@@ -1,52 +1,46 @@
-name: Gold BigQuery Table
+name: Create GCS Bucket & BQ Table
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  setup:
+  create-resources:
     runs-on: ubuntu-latest
     env:
-      BUCKET_NAME: temporary-dataproc-bucket
       SCHEMA_FILE: schemas/ridership_schema.json
-      BQ_TABLE_NAME: nyc  # Customize your BQ table name here
+      TABLE_NAME: ridership
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
 
       - name: Create JSON Credentials File
-        id: create-json-credentials
         uses: jsdaniell/create-json@v1.2.3
         with:
           name: "gcloud-service-key.json"
           json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: Set up gcloud CLI
+      - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           export_default_credentials: true
 
-      - name: Authenticate with gcloud
+      - name: Generate 4-character hash for bucket name
+        id: hash
         run: |
-          gcloud auth activate-service-account --key-file=gcloud-service-key.json
-          gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
+          HASH=$(echo "${{ secrets.GCP_PROJECT_ID }}$(date +%s)" | sha1sum | cut -c1-4)
+          UNIQUE_BUCKET_NAME="rakshaka-dataproc-bucket-$HASH"
+          echo "bucket=$UNIQUE_BUCKET_NAME" >> $GITHUB_OUTPUT
 
-      - name: Create GCS Bucket if not exists
+      - name: Create GCS Bucket
         run: |
-          if ! gsutil ls -b gs://$BUCKET_NAME &>/dev/null; then
-            echo "Creating bucket: $BUCKET_NAME"
-            gsutil mb -l US gs://$BUCKET_NAME
-          else
-            echo "Bucket already exists: $BUCKET_NAME"
-          fi
+          gsutil mb -p ${{ secrets.GCP_PROJECT_ID }} -l US gs://${{ steps.hash.outputs.bucket }}
 
       - name: Create BigQuery Table
         run: |
           bq mk --table \
-            ${{ secrets.GCP_PROJECT_ID }}:${{ secrets.BQ_DATASET }}.$BQ_TABLE_NAME \
-            $SCHEMA_FILE
+          --project_id=${{ secrets.GCP_PROJECT_ID }} \
+          ${{ secrets.BQ_DATASET }}.${{ env.TABLE_NAME }} \
+          ${{ env.SCHEMA_FILE }}
