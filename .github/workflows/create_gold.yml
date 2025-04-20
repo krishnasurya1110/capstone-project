@@ -43,6 +43,17 @@ jobs:
         run: |
           gsutil mb -p ${{ secrets.GCP_PROJECT_ID }} -l US gs://${{ steps.hash.outputs.bucket }}
 
+      
+      - name: Create BigQuery Dataset if not exists
+        run: |
+          if ! bq ls --project_id=${{ secrets.GCP_PROJECT_ID }} | grep -q "${{ secrets.BQ_DATASET }}"; then
+            bq --location=US mk --dataset \
+              --project_id=${{ secrets.GCP_PROJECT_ID }} \
+              ${{ secrets.BQ_DATASET }}
+          else
+            echo "Dataset ${{ secrets.BQ_DATASET }} already exists"
+          fi
+
       - name: Create BigQuery Table
         run: |
           bq mk --table \
