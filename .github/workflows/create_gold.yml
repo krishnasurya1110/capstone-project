@@ -1,7 +1,9 @@
 name: Create GCS Bucket & BQ Table
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   create-resources:
