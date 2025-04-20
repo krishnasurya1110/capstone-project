@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SCHEMA_FILE: schemas/ridership_schema.json
-      TABLE_NAME: ridership
+      TABLE_NAME: nyc
 
     steps:
       - name: Checkout Code
