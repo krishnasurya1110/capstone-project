@@ -36,6 +36,31 @@ jobs:
           gcloud auth activate-service-account --key-file=gcloud-service-key.json
           gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Ensure service account has necessary IAM roles
+        run: |
+          SA_EMAIL=$(gcloud auth list --filter=status:ACTIVE --format="value(account)")
+          PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/dataproc.admin" \
+            --quiet
+
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.admin" \
+            --quiet
+
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/iam.serviceAccountUser" \
+            --quiet
+
+          gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/logging.admin" \
+            --quiet
+
       - name: Create GCS bucket if not exists
         run: |
           if ! gsutil ls -b gs://${BUCKET_NAME} >/dev/null 2>&1; then
