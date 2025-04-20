@@ -3,7 +3,7 @@ name: Deploy to GCS & Create Dataproc Cluster
 on:
     push:
         paths:
-            - '/dataproc_init.sh'              
+            - 'silver_layer/dataproc_init.sh'              
 
 jobs:
   deploy:
