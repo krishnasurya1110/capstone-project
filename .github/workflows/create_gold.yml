@@ -11,6 +11,7 @@ jobs:
     env:
       SCHEMA_FILE: schemas/ridership_schema.json
       TABLE_NAME: nyc
+      INCREMENTAL_TABLE_NAME: inc_nyc
 
     steps:
       - name: Checkout Code
@@ -60,3 +61,11 @@ jobs:
           --project_id=${{ secrets.GCP_PROJECT_ID }} \
           ${{ secrets.BQ_DATASET }}.${{ env.TABLE_NAME }} \
           ${{ env.SCHEMA_FILE }}
+    
+      - name: Create BigQuery Table for incremental load
+        run: |
+          bq mk --table \
+          --project_id=${{ secrets.GCP_PROJECT_ID }} \
+          ${{ secrets.BQ_DATASET }}.${{ env.INCREMENTAL_TABLE_NAME }} \
+          ${{ env.SCHEMA_FILE }}
+     
