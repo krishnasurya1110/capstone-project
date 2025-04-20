@@ -1,9 +1,9 @@
 name: Deploy to GCS & Create Dataproc Cluster
 
 on:
-  push:
-    branches:
-      - main
+    push:
+        paths:
+            - '/dataproc_init.sh'              
 
 jobs:
   deploy:
