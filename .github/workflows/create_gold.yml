@@ -1,0 +1,71 @@
+name: Create GCS Bucket & BQ Table
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-resources:
+    runs-on: ubuntu-latest
+    env:
+      SCHEMA_FILE: schemas/ridership_schema.json
+      TABLE_NAME: nyc
+      INCREMENTAL_TABLE_NAME: inc_nyc
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Create JSON Credentials File
+        uses: jsdaniell/create-json@v1.2.3
+        with:
+          name: "gcloud-service-key.json"
+          json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          export_default_credentials: true
+
+      - name: Authenticate to Google Cloud
+        run: gcloud auth activate-service-account --key-file=gcloud-service-key.json
+      
+      - name: Generate 4-character hash for bucket name
+        id: hash
+        run: |
+          HASH=$(echo "${{ secrets.GCP_PROJECT_ID }}$(date +%s)" | sha1sum | cut -c1-4)
+          UNIQUE_BUCKET_NAME="rakshaka-dataproc-bucket-$HASH"
+          echo "bucket=$UNIQUE_BUCKET_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create GCS Bucket
+        run: |
+          gsutil mb -p ${{ secrets.GCP_PROJECT_ID }} -l US gs://${{ steps.hash.outputs.bucket }}
+
+      
+      - name: Create BigQuery Dataset if not exists
+        run: |
+          if ! bq ls --project_id=${{ secrets.GCP_PROJECT_ID }} | grep -q "${{ secrets.BQ_DATASET }}"; then
+            bq --location=US mk --dataset \
+              --project_id=${{ secrets.GCP_PROJECT_ID }} \
+              ${{ secrets.BQ_DATASET }}
+          else
+            echo "Dataset ${{ secrets.BQ_DATASET }} already exists"
+          fi
+
+      - name: Create BigQuery Table
+        run: |
+          bq mk --table \
+          --project_id=${{ secrets.GCP_PROJECT_ID }} \
+          ${{ secrets.BQ_DATASET }}.${{ env.TABLE_NAME }} \
+          ${{ env.SCHEMA_FILE }}
+    
+      - name: Create BigQuery Table for incremental load
+        run: |
+          bq mk --table \
+          --project_id=${{ secrets.GCP_PROJECT_ID }} \
+          ${{ secrets.BQ_DATASET }}.${{ env.INCREMENTAL_TABLE_NAME }} \
+          ${{ env.SCHEMA_FILE }}
+     

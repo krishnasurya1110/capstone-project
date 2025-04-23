@@ -3,7 +3,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col
 from google.cloud import logging as gcp_logging
 
-def main(delta_table_path, temp_gcs_bucket, project_id, dataset_id, bq_table_id):
+def main(delta_table_path, temp_gcs_bucket_main, temp_gcs_bucket_incr, project_id, dataset_id, bq_table_id, inc_bq_table_id):
     # Initialize GCP Logger
     logging_client = gcp_logging.Client()
     gcp_logger = logging_client.logger("delta_to_bigquery") 
@@ -18,6 +18,7 @@ def main(delta_table_path, temp_gcs_bucket, project_id, dataset_id, bq_table_id)
     gcp_logger.log_text("Spark session initialized successfully.", severity=200)
     
     bq_table_full_name = f"{project_id}.{dataset_id}.{bq_table_id}"
+    incr_bq_table_full_name = f"{project_id}.{dataset_id}.{inc_bq_table_id}"
     
     required_columns = ["transit_timestamp", 
         "transit_mode", 
@@ -60,7 +61,7 @@ def main(delta_table_path, temp_gcs_bucket, project_id, dataset_id, bq_table_id)
         try:
             delta_df.write.format("bigquery") \
                 .option("table", bq_table_full_name) \
-                .option("temporaryGcsBucket", temp_gcs_bucket) \
+                .option("temporaryGcsBucket", temp_gcs_bucket_main) \
                 .mode("overwrite") \
                 .save()
             gcp_logger.log_text("BigQuery table has no data. All records from Delta table written to BigQuery.", severity=200)
@@ -100,14 +101,28 @@ def main(delta_table_path, temp_gcs_bucket, project_id, dataset_id, bq_table_id)
         # Write new records to BigQuery or handle case with no new records
         if new_records_count > 0:
             try:
+                # Write the new records to the main table (append mode)
                 new_records_df.select(*required_columns).write.format("bigquery") \
                     .option("table", bq_table_full_name) \
-                    .option("temporaryGcsBucket", temp_gcs_bucket) \
+                    .option("temporaryGcsBucket", temp_gcs_bucket_main) \
                     .mode("append") \
                     .save()
                 gcp_logger.log_text(f"{new_records_count} new required records written to BigQuery.", severity=200)
             except Exception as e:
                 gcp_logger.log_text(f"Failed to write new records to BigQuery: {str(e)}", severity=500)
+                raise e
+            
+            # Write the incremental data to a new table (create or replace)
+            try:
+                new_records_df.select(*required_columns).write.format("bigquery") \
+                    .option("table", incr_bq_table_full_name) \
+                    .option("temporaryGcsBucket", temp_gcs_bucket_incr) \
+                    .mode("overwrite") \
+                    .save()
+                
+                gcp_logger.log_text(f"Incremental data written to table {incr_bq_table_full_name} (create or replace).", severity=200)
+            except Exception as e:
+                gcp_logger.log_text(f"Failed to write incremental data to BigQuery: {str(e)}", severity=500)
                 raise e
         else:
             gcp_logger.log_text("No new records to write to BigQuery. Skipping write operation.", severity=200)
@@ -117,18 +132,21 @@ def main(delta_table_path, temp_gcs_bucket, project_id, dataset_id, bq_table_id)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Delta to BigQuery data transfer")
     parser.add_argument("--delta_table_path", required=True, help="Path to the Delta table in GCS")
-    parser.add_argument("--temp_gcs_bucket", required=True, help="Temporary GCS bucket for BigQuery")
+    parser.add_argument("--temp_gcs_bucket_main", required=True, help="Temporary GCS bucket for BigQuery (main table)")
+    parser.add_argument("--temp_gcs_bucket_incr", required=True, help="Temporary GCS bucket for BigQuery (incremental table)")
     parser.add_argument("--project_id", required=True, help="GCP project ID")
     parser.add_argument("--dataset_id", required=True, help="BigQuery dataset ID")
     parser.add_argument("--bq_table_id", required=True, help="BigQuery table ID")
+    parser.add_argument("--inc_bq_table_id", required=True, help="BigQuery incremental table ID")
 
     args = parser.parse_args()
     
     main(
         delta_table_path=args.delta_table_path,
-        temp_gcs_bucket=args.temp_gcs_bucket,
+        temp_gcs_bucket_main=args.temp_gcs_bucket_main,
+        temp_gcs_bucket_incr=args.temp_gcs_bucket_incr,
         project_id=args.project_id,
         dataset_id=args.dataset_id,
-        bq_table_id=args.bq_table_id
+        bq_table_id=args.bq_table_id,
+        inc_bq_table_id=args.inc_bq_table_id
     )
-    
