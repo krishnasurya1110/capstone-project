@@ -19,7 +19,7 @@ def main():
     end_date = datetime.now().strftime("%m/%Y")   # End at current month
 
     # Define your GCS bucket name (configurable)
-    gcs_bucket_name = "nyc_subway_data"
+    gcs_bucket_name = "nyc_subway_data_1"
 
     # Get existing files from the GCS bucket
     existing_files = get_existing_files_gcs(gcs_bucket_name, file_extension=".parquet")
