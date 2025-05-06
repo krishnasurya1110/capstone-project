@@ -31,7 +31,7 @@ def get_validations(data_source_name,data_asset_name,suite_name,batch_definition
        'OMNY - Students',
        'OMNY - Fair Fare']
     
-    df_ = pd.read_csv("gs://bucket_jars/spark_files/station_data.csv")
+    df_ = pd.read_csv("gs://rakshaka-dataproc-bucket/spark-files/station_data.csv")
     # print(df_.head())
     
     
